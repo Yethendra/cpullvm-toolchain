@@ -119,7 +119,7 @@ def main():
             description="If the installed default multilib does not have a library available for -mcpu=cortex-r52, this test will fail.",
         ),
         XFail(
-            name="picolibc_rv64gc",
+            name="picolibc rv32/64gc",
             testnames=[
                 "math_errhandling.test",
                 "test-fma.test",
@@ -127,6 +127,7 @@ def main():
             result=NewResult.XFAILED,
             project="picolibc",
             variants=[
+                "riscv32gc_ilp32d",
                 "riscv64gc_lp64d_nopic",
                 "riscv64gc_zba_zbb_lp64d_nopic",
                 "riscv64gc_lp64_nopic",
@@ -151,14 +152,14 @@ def main():
             description="Disable the tests for now while the issue is being fixed upstream (https://github.com/picolibc/picolibc/pull/1072).",
         ),
         XFail(
-            name="picolibc_rv32ima_xqci",
+            name="picolibc_rv32im_xqci",
             testnames=[
                 "test-except.test"
             ],
             result=NewResult.EXCLUDE,
             project="picolibc",
             variants=[
-                "riscv32ima_xqci_ilp32_nopic"
+                "riscv32im_xqci_ilp32_nothreads_nopic"
             ],
             description="This test times out for some reason and we will most probably need a fix in QEMU. Disable until we have one.",
         ),

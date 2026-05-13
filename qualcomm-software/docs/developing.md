@@ -100,11 +100,12 @@ Then build as usual.
 
 ### Building subsets of library variants
 When building the toolchain, specific subsets of embedded library variants to build can be selected by
-setting `LLVM_TOOLCHAIN_LIBRARY_VARIANTS`.
+setting `LLVM_TOOLCHAIN_LIBRARY_VARIANTS`. The name of the variant should be from [multilib.json](../embedded-multilib/json/multilib.json)
+file.
 
-For example, the command below would build only the 'aarch64a' and 'riscv32imac_ilp32' variants:
+For example, the command below would build only the 'aarch64a_pacret' and 'riscv32imac_ilp32' variants:
 ```
-cmake .. -GNinja -DLLVM_TOOLCHAIN_LIBRARY_VARIANTS="aarch64a;riscv32imac_ilp32"
+cmake .. -GNinja -DLLVM_TOOLCHAIN_LIBRARY_VARIANTS="aarch64a_pacret;riscv32imac_ilp32"
 ninja llvm-toolchain
 ```
 
@@ -114,11 +115,16 @@ individual library variant, respectively, without having to rebuild the toolchai
 an existing set of LLVM tools). 
 
 ## Testing the toolchain
-Running `ninja check-all-llvm-toolchain` as described in [building.md](building.md) will test the entire
+Running `ninja check-all-llvm-toolchain` as described in [our build documentation](building.md) will test the entire
 toolchain (LLVM tests like `check-clang`, eld tests, any enabled library tests). But, it is also possible
 to test these components separately. A non-exhaustive list of `check-` targets CPULLVM provides:
 * `check-clang`, `check-llvm`, and the other usual LLVM `check-` targets are all still valid
 * `check-eld` works as usual
 * `check-llvm-toolchain-lit` runs only the built-in [multilib tests](../test/multilib/)
-* `check-<component>` targets (where component is ex: picolibc) will run any enabled tests for that component across all variants
+* `check-<component>` targets will run any enabled tests for that component across all variants
 * `check-<component>-<variant>` targets will run the given component tests for the specified variant
+
+Example (non-exhaustive) components that can be used in the commands above:
+* `compiler-rt`
+* `picolibc` (or the name of the C library selected if different)
+* `cxx`/`cxxabi`/`unwind`

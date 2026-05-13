@@ -84,6 +84,16 @@ set(ENABLE_CXX_LIBS ${ENABLE_CXX_LIBS_def} CACHE BOOL "Build CXX libs")
 set(ENABLE_LIBC_TESTS ${ENABLE_LIBC_TESTS_def} CACHE BOOL "Enable libc tests (picolibc only).")
 set(ENABLE_COMPILER_RT_TESTS ${ENABLE_COMPILER_RT_TESTS_def} CACHE BOOL "Enable compiler-rt tests.")
 set(ENABLE_LIBCXX_TESTS ${ENABLE_LIBCXX_TESTS_def} CACHE BOOL "Enable libcxx tests.")
+set(DISABLE_THREADS ${DISABLE_THREADS_def} CACHE BOOL "Disable threads/atomic/TLS (picolibc only).")
+set(SUPPORTED_TLS_MODELS local-exec initial-exec local-dynamic global-dynamic)
+if(NOT DEFINED TLS_MODEL_def)
+    set(TLS_MODEL_def local-exec)
+elseif(NOT TLS_MODEL_def IN_LIST SUPPORTED_TLS_MODELS)
+    string(REPLACE ";" ", " SUPPORTED_TLS_MODELS_STR "${SUPPORTED_TLS_MODELS}")
+    message(FATAL_ERROR "Unsupported TLS_MODEL value. Supported values are ${SUPPORTED_TLS_MODELS_STR}")
+endif()
+set(TLS_MODEL ${TLS_MODEL_def} CACHE STRING "TLS model to use. Currently only used by picolibc, other projects use the project/toolchain defaults.")
+set_property(CACHE TLS_MODEL PROPERTY STRINGS ${SUPPORTED_TLS_MODELS})
 set(LLVM_BINARY_DIR "" CACHE PATH "Path to LLVM toolchain root to build libraries with")
 
 # Set up a few arbitrary pass-through flags for musl-embedded. This probably
@@ -176,8 +186,14 @@ if(ENABLE_LIBC_TESTS OR ENABLE_COMPILER_RT_TESTS OR ENABLE_LIBCXX_TESTS)
         if(TARGET_ARCH MATCHES "^aarch64")
             find_program(QEMU_EXECUTABLE qemu-system-aarch64 REQUIRED)
         elseif(TARGET_ARCH MATCHES "^riscv32")
-            if(VARIANT MATCHES "^riscv32ima_xqci_ilp32")
-                find_program(QEMU_EXECUTABLE qemu-system-riscv32-xqci REQUIRED)
+            if(VARIANT MATCHES "^riscv32im_xqci_ilp32")
+                find_program(QEMU_EXECUTABLE qemu-system-riscv32-xqci)
+                if(NOT QEMU_EXECUTABLE)
+                    message(STATUS "qemu-system-riscv32-xqci not found. Disabling QEMU tests for ${VARIANT}.")
+                    set(ENABLE_LIBC_TESTS OFF CACHE BOOL "Enable libc tests (picolibc only)." FORCE)
+                    set(ENABLE_COMPILER_RT_TESTS OFF CACHE BOOL "Enable compiler-rt tests." FORCE)
+                    set(ENABLE_LIBCXX_TESTS OFF CACHE BOOL "Enable libcxx tests." FORCE)
+                endif()
             else()
                 find_program(QEMU_EXECUTABLE qemu-system-riscv32 REQUIRED)
             endif()
@@ -187,30 +203,29 @@ if(ENABLE_LIBC_TESTS OR ENABLE_COMPILER_RT_TESTS OR ENABLE_LIBCXX_TESTS)
             find_program(QEMU_EXECUTABLE qemu-system-arm REQUIRED)
         endif()
 
-        # Use colon as a separator because comma and semicolon are used for
-        # other purposes in CMake.
-        string(REPLACE " " ":" qemu_params_list "${QEMU_PARAMS}")
+        if(QEMU_EXECUTABLE)
+            # Use colon as a separator because comma and semicolon are used for
+            # other purposes in CMake.
+            string(REPLACE " " ":" qemu_params_list "${QEMU_PARAMS}")
 
-        set(test_executor_params --qemu-command ${QEMU_EXECUTABLE} --qemu-machine ${QEMU_MACHINE})
-        if(QEMU_CPU)
-            list(APPEND test_executor_params --qemu-cpu ${QEMU_CPU})
+            set(test_executor_params --qemu-command ${QEMU_EXECUTABLE} --qemu-machine ${QEMU_MACHINE})
+            if(QEMU_CPU)
+                list(APPEND test_executor_params --qemu-cpu ${QEMU_CPU})
+            endif()
+            if(qemu_params_list)
+                list(APPEND test_executor_params "--qemu-params=${qemu_params_list}")
+            endif()
+            set(
+                lit_test_executor
+                ${CMAKE_CURRENT_SOURCE_DIR}/test-support/lit-exec-qemu.py
+                ${test_executor_params}
+            )
         endif()
-        if(qemu_params_list)
-            list(APPEND test_executor_params "--qemu-params=${qemu_params_list}")
-        endif()
-        set(
-            lit_test_executor
-            ${CMAKE_CURRENT_SOURCE_DIR}/test-support/lit-exec-qemu.py
-            ${test_executor_params}
-        )
     endif()
     list(JOIN lit_test_executor " " lit_test_executor)
 endif()
 
-# Adding "-isystem ${TEMP_LIB_DIR}/include" to work around a sysroot issue for
-# RISC-V baremetal. We may not need this workaround in the future if the issue
-# is fixed upstream.
-set(compile_arch_flags "--target=${target_triple} ${COMPILE_FLAGS} --sysroot ${TEMP_LIB_DIR} -isystem ${TEMP_LIB_DIR}/include")
+set(compile_arch_flags "--target=${target_triple} ${COMPILE_FLAGS} --sysroot ${TEMP_LIB_DIR}")
 # Compiling the libraries benefits from some extra optimization
 # flags, and requires a sysroot.
 set(lib_compile_flags "${compile_arch_flags} -ffunction-sections -fdata-sections")
@@ -232,6 +247,16 @@ elseif(LIBRARY_BUILD_TYPE STREQUAL releasewithdebuginfo)
     set(LIBRARY_CMAKE_BUILD_TYPE RelWithDebInfo)
     set(LIBRARY_MESON_BUILD_TYPE debugoptimized)
 endif()
+
+# Copy the empty multilib file. The intent here is only to suppress the
+# hardcoded multilibs that are present in the Baremetal toolchain object. This
+# allows us to use `--sysroot` consistently across all variants while building
+# and users to use `--sysroot` to point to any of our library variants.
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/empty-multilib.yaml
+    ${TEMP_LIB_DIR}/multilib.yaml
+    COPYONLY
+)
 
 ###############################################################################
 # compiler-rt
@@ -447,6 +472,15 @@ if(C_LIBRARY STREQUAL picolibc)
 
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/meson-cross-build.txt.in ${CMAKE_CURRENT_BINARY_DIR}/meson-cross-build.txt @ONLY)
 
+    set(single_thread "false")
+    set(thread_local_storage "picolibc")
+    set(atomic_ungetc "true")
+    if(DISABLE_THREADS)
+      set(single_thread "true")
+      set(thread_local_storage "false")
+      set(atomic_ungetc "false")
+    endif()
+
     ExternalProject_Add(
         picolibc
         STAMP_DIR ${PROJECT_PREFIX}/picolibc/${VARIANT_BUILD_ID}/stamp
@@ -474,6 +508,10 @@ if(C_LIBRARY STREQUAL picolibc)
             --prefix <INSTALL_DIR>
             --cross-file ${CMAKE_CURRENT_BINARY_DIR}/meson-cross-build.txt
             --buildtype=${LIBRARY_MESON_BUILD_TYPE}
+            -Dsingle-thread=${single_thread}
+            -Dthread-local-storage=${thread_local_storage}
+            -Dtls-model=${TLS_MODEL}
+            -Datomic-ungetc=${atomic_ungetc}
             <SOURCE_DIR>
         BUILD_COMMAND ${MESON_EXECUTABLE} compile
         INSTALL_COMMAND ${MESON_EXECUTABLE} install ${MESON_INSTALL_QUIET}

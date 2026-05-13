@@ -14,6 +14,7 @@ on:
     types: [opened, synchronize, reopened]
     paths-ignore:
       - '.github/workflows/qcom-preflight-checks.yml'
+      - '**/*.md'
 
 permissions:
   contents: read
@@ -36,16 +37,16 @@ jobs:
           - build_script: build.sh
             test_script: test.sh
             target_os: Linux-x86_64
-            runner: self-hosted
+            runner: cpullvm-ubuntu24-x86_64
 
           - build_script: build_musl-embedded_overlay.sh
             test_script: ''
             target_os: Linux-x86_64
-            runner: self-hosted
+            runner: cpullvm-ubuntu24-x86_64
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
@@ -58,6 +59,15 @@ jobs:
 
       - name: Build toolchain
         run: ./qualcomm-software/scripts/${{ matrix.build_script }}
+
+      - name: Upload built packages
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: success()
+        with:
+          name: cpullvm-packages-${{ matrix.build_script }}-${{ matrix.target_os }}
+          path: |
+            build*/cpullvm-*.tar.xz
+          retention-days: 1
 
       - name: Test
         if: matrix.test_script != ''

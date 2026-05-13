@@ -22,12 +22,26 @@ CPULLVM requires the following software to be installed:
 Library testing requires:
 * [QEMU](https://www.qemu.org/download/)
 
-Testing with QEMU is enabled by default, but can be disabled using the 
-`-DENABLE_QEMU_TESTING=OFF` CMake option if testing is not required or QEMU is
-not installed.
+Testing with QEMU (using QEMU's [system emulation](https://www.qemu.org/docs/master/system/introduction.html))
+is enabled by default, but can be disabled using the `-DENABLE_QEMU_TESTING=OFF` CMake
+option if testing is not required or QEMU is not installed.
 
 A relatively recent version of QEMU is required to support the latest RISC-V extensions.
 CPULLVM currently builds and tests with QEMU v10.1.3.
+
+The `riscv32im_xqci_ilp32` library-test variant requires an [Xqci and Xqccmp](https://github.com/quic/riscv-unified-db/releases) enabled QEMU build. Clone and build the [QEMU Xqci fork](https://github.com/quic/qemu/tree/feature/xqci), and ensure the binary is available as `qemu-system-riscv32-xqci` in your `PATH`:
+
+```
+git clone --branch feature/xqci https://github.com/quic/qemu.git qemu-xqci
+cd qemu-xqci
+./configure --target-list=riscv32-softmmu
+ninja
+
+# CPULLVM expects this executable name
+mv "<path-to>/qemu-system-riscv32" "<path-to>/qemu-system-riscv32-xqci"
+```
+
+Refer to the [Xqci json](https://github.com/qualcomm/cpullvm-toolchain/blob/qualcomm-software/qualcomm-software/embedded-multilib/json/variants/riscv32im_xqci_ilp32_nothreads_nopic.json) file for the flags that need to be passed to QEMU.
 
 ## Patching
 
@@ -40,9 +54,19 @@ python3 qualcomm-software/cmake/patch_repo.py --method apply qualcomm-software/p
 ```
 
 Other projects (eld, picolibc, etc.) are checked out and patched automatically. If you prefer, you can check
-out and patch the repos manually and use those, see [developing.md](./developing.md).
+out and patch the repos manually and use those, see [our developer documentation](./developing.md).
 
 ## Building
+
+The commands below can be used to build a toolchain containing Picolibc libraries for all
+currently-enabled embedded variants.
+
+> [!NOTE]
+> Not all runtimes may be built on all hosts. CPULLVM's musl and musl-embedded libraries
+> are only expected to be built on Linux hosts. Windows runtimes (compiler-rt, profile libraries)
+> are expected to be built on Windows hosts. Please refer to our [workflows](/.github/workflows) and
+> [build scripts](/qualcomm-software/scripts) for examples on how our toolchains are built and packaged
+> on different hosts.
 
 ### Linux
 The commands in the sections below assume you are in the `cpullvm-toolchain/qualcomm-software` directory.
@@ -81,6 +105,8 @@ To run all LLVM, eld, and library tests together, the below command may be used:
 ```
 ninja check-all-llvm-toolchain
 ```
+Tests can also be run in smaller subsets, please refer to our [developer documentation](./developing.md#testing-the-toolchain)
+for more information.
 
 ### Installing the toolchain
 
@@ -99,4 +125,4 @@ ninja package-llvm-toolchain
 
 CPULLVM can be configured and built in a variety of ways, including changing the default libc to use for embedded,
 building Linux libraries, and building only a subset of library variants. These (and other) options are
-documented in part in [developing.md](./developing.md).
+documented in part in [our developer documentation](./developing.md).
