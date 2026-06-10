@@ -1,0 +1,8 @@
+name: Test Runner
+on: workflow_dispatch
+jobs:
+  check-runner:
+    runs-on: [self-hosted, your-specific-label] # Use the labels you assigned
+    steps:
+      - name: Hello from Runner
+        run: echo "Successfully running on $(hostname)"
